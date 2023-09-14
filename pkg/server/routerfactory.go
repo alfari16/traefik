@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
-
 	"github.com/traefik/traefik/v2/pkg/config/runtime"
 	"github.com/traefik/traefik/v2/pkg/config/static"
 	"github.com/traefik/traefik/v2/pkg/log"
+	"github.com/traefik/traefik/v2/pkg/memcached"
 	"github.com/traefik/traefik/v2/pkg/metrics"
 	"github.com/traefik/traefik/v2/pkg/server/middleware"
 	tcpmiddleware "github.com/traefik/traefik/v2/pkg/server/middleware/tcp"
@@ -31,11 +31,13 @@ type RouterFactory struct {
 
 	chainBuilder *middleware.ChainBuilder
 	tlsManager   *tls.Manager
+
+	memcached memcached.IMemcached
 }
 
 // NewRouterFactory creates a new RouterFactory.
 func NewRouterFactory(staticConfiguration static.Configuration, managerFactory *service.ManagerFactory, tlsManager *tls.Manager,
-	chainBuilder *middleware.ChainBuilder, pluginBuilder middleware.PluginsBuilder, metricsRegistry metrics.Registry,
+	chainBuilder *middleware.ChainBuilder, pluginBuilder middleware.PluginsBuilder, metricsRegistry metrics.Registry, memcached memcached.IMemcached,
 ) *RouterFactory {
 	var entryPointsTCP, entryPointsUDP []string
 	for name, cfg := range staticConfiguration.EntryPoints {
@@ -60,6 +62,7 @@ func NewRouterFactory(staticConfiguration static.Configuration, managerFactory *
 		tlsManager:      tlsManager,
 		chainBuilder:    chainBuilder,
 		pluginBuilder:   pluginBuilder,
+		memcached:       memcached,
 	}
 }
 
@@ -70,7 +73,7 @@ func (f *RouterFactory) CreateRouters(rtConf *runtime.Configuration) (map[string
 	// HTTP
 	serviceManager := f.managerFactory.Build(rtConf)
 
-	middlewaresBuilder := middleware.NewBuilder(rtConf.Middlewares, serviceManager, f.pluginBuilder)
+	middlewaresBuilder := middleware.NewBuilder(rtConf.Middlewares, serviceManager, f.pluginBuilder, f.memcached)
 
 	routerManager := router.NewManager(rtConf, serviceManager, middlewaresBuilder, f.chainBuilder, f.metricsRegistry)
 

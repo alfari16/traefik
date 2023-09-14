@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/traefik/traefik/v2/pkg/memcached"
+	"github.com/traefik/traefik/v2/pkg/middlewares/cache"
 	"net/http"
 	"reflect"
 	"strings"
@@ -43,6 +45,7 @@ type Builder struct {
 	configs        map[string]*runtime.MiddlewareInfo
 	pluginBuilder  PluginsBuilder
 	serviceBuilder serviceBuilder
+	memcached      memcached.IMemcached
 }
 
 type serviceBuilder interface {
@@ -50,8 +53,8 @@ type serviceBuilder interface {
 }
 
 // NewBuilder creates a new Builder.
-func NewBuilder(configs map[string]*runtime.MiddlewareInfo, serviceBuilder serviceBuilder, pluginBuilder PluginsBuilder) *Builder {
-	return &Builder{configs: configs, serviceBuilder: serviceBuilder, pluginBuilder: pluginBuilder}
+func NewBuilder(configs map[string]*runtime.MiddlewareInfo, serviceBuilder serviceBuilder, pluginBuilder PluginsBuilder, memcached memcached.IMemcached) *Builder {
+	return &Builder{configs: configs, serviceBuilder: serviceBuilder, pluginBuilder: pluginBuilder, memcached: memcached}
 }
 
 // BuildChain creates a middleware chain.
@@ -171,6 +174,16 @@ func (b *Builder) buildConstructor(ctx context.Context, middlewareName string) (
 		}
 		middleware = func(next http.Handler) (http.Handler, error) {
 			return compress.New(ctx, next, *config.Compress, middlewareName)
+		}
+	}
+
+	// Cache
+	if config.Cache != nil {
+		if middleware != nil {
+			return nil, badConf
+		}
+		middleware = func(next http.Handler) (http.Handler, error) {
+			return cache.New(ctx, next, *config.Cache, middlewareName, b.memcached)
 		}
 	}
 

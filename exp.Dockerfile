@@ -1,5 +1,5 @@
 # WEBUI
-FROM node:12.11 as webui
+FROM node:14.16 as webui
 
 ENV WEBUI_DIR /src/webui
 RUN mkdir -p $WEBUI_DIR

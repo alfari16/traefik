@@ -34,8 +34,14 @@ type Middleware struct {
 	PassTLSClientCert *PassTLSClientCert `json:"passTLSClientCert,omitempty" toml:"passTLSClientCert,omitempty" yaml:"passTLSClientCert,omitempty" export:"true"`
 	Retry             *Retry             `json:"retry,omitempty" toml:"retry,omitempty" yaml:"retry,omitempty" export:"true"`
 	ContentType       *ContentType       `json:"contentType,omitempty" toml:"contentType,omitempty" yaml:"contentType,omitempty" export:"true"`
+	Cache             *Cache             `json:"cache,omitempty" toml:"cache,omitempty" yaml:"cache,omitempty" label:"allowEmpty" file:"allowEmpty" kv:"allowEmpty" export:"true"`
 
 	Plugin map[string]PluginConf `json:"plugin,omitempty" toml:"plugin,omitempty" yaml:"plugin,omitempty" export:"true"`
+}
+
+type Cache struct {
+	TTL              string `json:"ttl,omitempty" toml:"ttl,omitempty" yaml:"ttl,omitempty" export:"true"`
+	VariationHeaders string `json:"variation_headers,omitempty" toml:"variation_headers,omitempty" yaml:"variation_headers,omitempty" export:"true"`
 }
 
 // +k8s:deepcopy-gen=true

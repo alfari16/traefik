@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/traefik/traefik/v2/pkg/memcached"
+
 	"github.com/coreos/go-systemd/daemon"
 	"github.com/go-acme/lego/v4/challenge"
 	gokitmetrics "github.com/go-kit/kit/metrics"
@@ -275,7 +277,9 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 
 	accessLog := setupAccessLog(staticConfiguration.AccessLog)
 	chainBuilder := middleware.NewChainBuilder(*staticConfiguration, metricsRegistry, accessLog)
-	routerFactory := server.NewRouterFactory(*staticConfiguration, managerFactory, tlsManager, chainBuilder, pluginBuilder, metricsRegistry)
+
+	memcachedClient := setupMemcached(staticConfiguration.Memcached)
+	routerFactory := server.NewRouterFactory(*staticConfiguration, managerFactory, tlsManager, chainBuilder, pluginBuilder, metricsRegistry, memcachedClient)
 
 	// Watcher
 
@@ -604,4 +608,8 @@ func collect(staticConfiguration *static.Configuration) {
 			}
 		}
 	})
+}
+
+func setupMemcached(conf *static.Memcached) *memcached.Memcached {
+	return memcached.NewMemcached(conf)
 }

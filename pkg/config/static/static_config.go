@@ -66,6 +66,8 @@ type Configuration struct {
 	EntryPoints      EntryPoints       `description:"Entry points definition." json:"entryPoints,omitempty" toml:"entryPoints,omitempty" yaml:"entryPoints,omitempty" export:"true"`
 	Providers        *Providers        `description:"Providers configuration." json:"providers,omitempty" toml:"providers,omitempty" yaml:"providers,omitempty" export:"true"`
 
+	Memcached *Memcached `description:"Memcached configuration." json:"memcached,omitempty" toml:"memcached,omitempty" yaml:"memcached,omitempty" label:"allowEmpty" file:"allowEmpty" export:"true"`
+
 	API     *API           `description:"Enable api/dashboard." json:"api,omitempty" toml:"api,omitempty" yaml:"api,omitempty" label:"allowEmpty" file:"allowEmpty" export:"true"`
 	Metrics *types.Metrics `description:"Enable a metrics exporter." json:"metrics,omitempty" toml:"metrics,omitempty" yaml:"metrics,omitempty" export:"true"`
 	Ping    *ping.Handler  `description:"Enable ping." json:"ping,omitempty" toml:"ping,omitempty" yaml:"ping,omitempty" label:"allowEmpty" file:"allowEmpty" export:"true"`
@@ -362,4 +364,8 @@ func getSafeACMECAServer(caServerSrc string) string {
 	}
 
 	return caServerSrc
+}
+
+type Memcached struct {
+	Address string `description:"Memcached address URL to connect." json:"memcached,omitempty" toml:"memcached,omitempty" yaml:"memcached,omitempty"`
 }

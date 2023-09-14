@@ -19,3 +19,5 @@ plugins-storage/
 plugins-local/
 traefik_changelog.md
 integration/tailscale.secret
+traefik.yaml
+dynamic.yaml

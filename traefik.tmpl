@@ -1,0 +1,53 @@
+entryPoints:
+  http:
+    address: :80
+    forwardedHeaders:
+      insecure: true
+    transport:
+      respondingTimeouts:
+        writeTimeout: 30s
+        readTimeout: 30s
+  traefik:
+    address: :8081
+  metrics:
+    address: :8082
+
+api:
+  insecure: true
+
+log:
+  level: ERROR
+
+# Enable Consul Catalog configuration backend.
+providers:
+  consulCatalog:
+    prefix: api_gateway
+    exposedByDefault: false
+    refreshInterval: 5s
+    cache: false
+    stale: true
+    watch: true
+
+    endpoint:
+      address: http://consul.service.consul:8500
+      scheme: http
+
+# Enable Prometheus
+metrics:
+  prometheus:
+    entryPoint: metrics
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+
+# Enable Tracing
+tracing:
+  jaeger:
+    collector:
+      endpoint: ${JAEGER_ADDRESS}:14268/api/traces?format=jaeger.thrift
+
+# Integrate to memcached for multi-purpose key-value storage
+memcached:
+  address: ${MEMCACHED_ADDRESS}
