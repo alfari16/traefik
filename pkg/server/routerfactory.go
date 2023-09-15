@@ -32,12 +32,12 @@ type RouterFactory struct {
 	chainBuilder *middleware.ChainBuilder
 	tlsManager   *tls.Manager
 
-	memcached memcached.IMemcached
+	memcached *memcached.Client
 }
 
 // NewRouterFactory creates a new RouterFactory.
 func NewRouterFactory(staticConfiguration static.Configuration, managerFactory *service.ManagerFactory, tlsManager *tls.Manager,
-	chainBuilder *middleware.ChainBuilder, pluginBuilder middleware.PluginsBuilder, metricsRegistry metrics.Registry, memcached memcached.IMemcached,
+	chainBuilder *middleware.ChainBuilder, pluginBuilder middleware.PluginsBuilder, metricsRegistry metrics.Registry, memcached *memcached.Client,
 ) *RouterFactory {
 	var entryPointsTCP, entryPointsUDP []string
 	for name, cfg := range staticConfiguration.EntryPoints {

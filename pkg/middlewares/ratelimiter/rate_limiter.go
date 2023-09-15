@@ -1,14 +1,16 @@
-// Package ratelimiter implements a rate limiting and traffic shaping middleware with a set of token buckets.
+// Package ratelimiter implements a burstRate limiting and traffic shaping middleware with a set of token buckets.
 package ratelimiter
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/mailgun/ttlmap"
+	mc "github.com/traefik/traefik/v2/pkg/memcached"
 	"math"
 	"net/http"
 	"time"
 
-	"github.com/mailgun/ttlmap"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/traefik/traefik/v2/pkg/config/dynamic"
 	"github.com/traefik/traefik/v2/pkg/log"
@@ -19,34 +21,43 @@ import (
 )
 
 const (
-	typeName   = "RateLimiterType"
+	typeName   = "RateLimiter"
 	maxSources = 65536
 )
 
-// rateLimiter implements rate limiting and traffic shaping with a set of token buckets;
+// rateLimiter implements burstRate limiting and traffic shaping with a set of token buckets;
 // one for each traffic source. The same parameters are applied to all the buckets.
 type rateLimiter struct {
-	name  string
-	rate  rate.Limit // reqs/s
-	burst int64
+	name      string
+	burstRate *rate.Limiter // reqs/s
+	burst     int64
+	average   int64
 	// maxDelay is the maximum duration we're willing to wait for a bucket reservation to become effective, in nanoseconds.
-	// For now it is somewhat arbitrarily set to 1/(2*rate).
+	// For now it is somewhat arbitrarily set to 1/(2*burstRate).
 	maxDelay time.Duration
-	// each rate limiter for a given source is stored in the buckets ttlmap.
+	// each burstRate limiter for a given source is stored in the buckets ttlmap.
 	// To keep this ttlmap constrained in size,
 	// each ratelimiter is "garbage collected" when it is considered expired.
 	// It is considered expired after it hasn't been used for ttl seconds.
-	ttl           int
+	ttl           time.Duration
 	sourceMatcher utils.SourceExtractor
 	next          http.Handler
 
 	buckets *ttlmap.TtlMap // actual buckets, keyed by source.
+	mh      middlewares.IMemcachedHandler[cacheItem]
 }
 
-// New returns a rate limiter middleware.
-func New(ctx context.Context, next http.Handler, config dynamic.RateLimit, name string) (http.Handler, error) {
+type cacheItem struct {
+	StoredAt int64
+	Counter  int64
+}
+
+// New returns a burstRate limiter middleware.
+func New(ctx context.Context, next http.Handler, config dynamic.RateLimit, name string, memcached *mc.Client) (http.Handler, error) {
 	ctxLog := log.With(ctx, log.Str(log.MiddlewareName, name), log.Str(log.MiddlewareType, typeName))
-	log.FromContext(ctxLog).Debug("Creating middleware")
+	log.FromContext(ctxLog).Infof("Creating middleware with period:%s", config.Period.String())
+
+	mh := mc.NewMemcachedHandler[cacheItem](memcached)
 
 	if config.SourceCriterion == nil ||
 		config.SourceCriterion.IPStrategy == nil &&
@@ -61,60 +72,21 @@ func New(ctx context.Context, next http.Handler, config dynamic.RateLimit, name 
 		return nil, err
 	}
 
-	buckets, err := ttlmap.NewConcurrent(maxSources)
-	if err != nil {
-		return nil, err
-	}
-
-	burst := config.Burst
-	if burst < 1 {
-		burst = 1
-	}
-
 	period := time.Duration(config.Period)
-	if period < 0 {
+	if period.Seconds() < 0 {
 		return nil, fmt.Errorf("negative value not valid for period: %v", period)
 	}
-	if period == 0 {
+	if period.Seconds() == 0 {
 		period = time.Second
-	}
-
-	// if config.Average == 0, in that case,
-	// the value of maxDelay does not matter since the reservation will (buggily) give us a delay of 0 anyway.
-	var maxDelay time.Duration
-	var rtl float64
-	if config.Average > 0 {
-		rtl = float64(config.Average*int64(time.Second)) / float64(period)
-		// maxDelay does not scale well for rates below 1,
-		// so we just cap it to the corresponding value, i.e. 0.5s, in order to keep the effective rate predictable.
-		// One alternative would be to switch to a no-reservation mode (Allow() method) whenever we are in such a low rate regime.
-		if rtl < 1 {
-			maxDelay = 500 * time.Millisecond
-		} else {
-			maxDelay = time.Second / (time.Duration(rtl) * 2)
-		}
-	}
-
-	// Make the ttl inversely proportional to how often a rate limiter is supposed to see any activity (when maxed out),
-	// for low rate limiters.
-	// Otherwise just make it a second for all the high rate limiters.
-	// Add an extra second in both cases for continuity between the two cases.
-	ttl := 1
-	if rtl >= 1 {
-		ttl++
-	} else if rtl > 0 {
-		ttl += int(1 / rtl)
 	}
 
 	return &rateLimiter{
 		name:          name,
-		rate:          rate.Limit(rtl),
-		burst:         burst,
-		maxDelay:      maxDelay,
+		average:       config.Average,
 		next:          next,
 		sourceMatcher: sourceMatcher,
-		buckets:       buckets,
-		ttl:           ttl,
+		ttl:           period,
+		mh:            mh,
 	}, nil
 }
 
@@ -132,45 +104,40 @@ func (rl *rateLimiter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not extract source of request", http.StatusInternalServerError)
 		return
 	}
+	compositeSources := fmt.Sprintf("rl:%s%s%s%s", source, rl.name, r.Method, r.URL.Path)
 
-	if amount != 1 {
-		logger.Infof("ignoring token bucket amount > 1: %d", amount)
+	if rl.average == 0 {
+		rl.next.ServeHTTP(w, r)
+		return
 	}
 
-	var bucket *rate.Limiter
-	if rlSource, exists := rl.buckets.Get(source); exists {
-		bucket = rlSource.(*rate.Limiter)
-	} else {
-		bucket = rate.NewLimiter(rl.rate, int(rl.burst))
+	now := time.Now().Unix()
+	ci := cacheItem{
+		StoredAt: now,
+		Counter:  0,
+	}
+	if err := rl.mh.Get(r.Context(), compositeSources, &ci); err != nil && !errors.As(err, &mc.ErrKeyNotFound{}) {
+		logger.Errorf("could not get from memcached: %v, skipping rate limit", err)
+		rl.next.ServeHTTP(w, r)
+		return
+	}
+
+	ttl := time.Since(time.Unix(ci.StoredAt, 0).Add(rl.ttl))
+	ci.Counter = ci.Counter + amount
+
+	logger.Debugf("stored_at:%s source:%s amount:%d rl_ttl:%s ttl:%s counter:%d is_now:%t", time.Unix(ci.StoredAt, 0).String(), compositeSources, amount, rl.ttl.String(), ttl.String(), ci.Counter, ci.StoredAt == now)
+	if ci.Counter > rl.average && ttl.Seconds() < 0 {
+		rl.serveDelayError(ctx, w, ttl)
+		return
 	}
 
 	// We Set even in the case where the source already exists,
 	// because we want to update the expiryTime everytime we get the source,
 	// as the expiryTime is supposed to reflect the activity (or lack thereof) on that source.
-	if err := rl.buckets.Set(source, bucket, rl.ttl); err != nil {
-		logger.Errorf("could not insert/update bucket: %v", err)
-		http.Error(w, "could not insert/update bucket", http.StatusInternalServerError)
-		return
+	if err := rl.mh.Set(r.Context(), compositeSources, ci, -ttl); err != nil {
+		logger.Errorf("could not insert/update to memcached: %v", err)
 	}
 
-	// time/rate is bugged, since a rate.Limiter with a 0 Limit not only allows a Reservation to take place,
-	// but also gives a 0 delay below (because of a division by zero, followed by a multiplication that flips into the negatives),
-	// regardless of the current load.
-	// However, for now we take advantage of this behavior to provide the no-limit ratelimiter when config.Average is 0.
-	res := bucket.Reserve()
-	if !res.OK() {
-		http.Error(w, "No bursty traffic allowed", http.StatusTooManyRequests)
-		return
-	}
-
-	delay := res.Delay()
-	if delay > rl.maxDelay {
-		res.Cancel()
-		rl.serveDelayError(ctx, w, delay)
-		return
-	}
-
-	time.Sleep(delay)
 	rl.next.ServeHTTP(w, r)
 }
 

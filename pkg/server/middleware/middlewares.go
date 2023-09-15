@@ -45,7 +45,7 @@ type Builder struct {
 	configs        map[string]*runtime.MiddlewareInfo
 	pluginBuilder  PluginsBuilder
 	serviceBuilder serviceBuilder
-	memcached      memcached.IMemcached
+	memcached      *memcached.Client
 }
 
 type serviceBuilder interface {
@@ -53,7 +53,7 @@ type serviceBuilder interface {
 }
 
 // NewBuilder creates a new Builder.
-func NewBuilder(configs map[string]*runtime.MiddlewareInfo, serviceBuilder serviceBuilder, pluginBuilder PluginsBuilder, memcached memcached.IMemcached) *Builder {
+func NewBuilder(configs map[string]*runtime.MiddlewareInfo, serviceBuilder serviceBuilder, pluginBuilder PluginsBuilder, memcached *memcached.Client) *Builder {
 	return &Builder{configs: configs, serviceBuilder: serviceBuilder, pluginBuilder: pluginBuilder, memcached: memcached}
 }
 
@@ -278,7 +278,7 @@ func (b *Builder) buildConstructor(ctx context.Context, middlewareName string) (
 			return nil, badConf
 		}
 		middleware = func(next http.Handler) (http.Handler, error) {
-			return ratelimiter.New(ctx, next, *config.RateLimit, middlewareName)
+			return ratelimiter.New(ctx, next, *config.RateLimit, middlewareName, b.memcached)
 		}
 	}
 

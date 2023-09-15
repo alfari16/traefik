@@ -1,27 +1,24 @@
 package memcached
 
 import (
-	"context"
-	"net/http"
-	"time"
+	"github.com/traefik/traefik/v2/pkg/config/static"
+	"go.skia.org/infra/go/reconnectingmemcached"
 )
 
-type IMemcached interface {
-	Get(ctx context.Context, key string) (CacheItem, error)
-	Set(ctx context.Context, key string, item CacheItem, ttl time.Duration) error
-	Ping() error
+type Client struct {
+	client reconnectingmemcached.Client
 }
 
-type CacheItem struct {
-	Body     []byte
-	Status   int
-	Header   http.Header
-	StoredAt int64
-
-	// MaxAge stores the expiration of the cache.
-	// Equivalent to TTL
-	MaxAge int64
-
-	// Age represents duration of the content stored in the cache in seconds.
-	Age int64
+func NewMemcachedClient(conf *static.Memcached) *Client {
+	if conf == nil {
+		return nil
+	}
+	c := reconnectingmemcached.NewClient(reconnectingmemcached.Options{
+		Servers:                      []string{conf.Address},
+		MaxIdleConnections:           10,
+		AllowedFailuresBeforeHealing: 3,
+	})
+	return &Client{
+		client: c,
+	}
 }

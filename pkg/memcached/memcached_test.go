@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package memcached
 
 import (
@@ -9,6 +12,7 @@ import (
 )
 
 func TestMemcached(t *testing.T) {
+	t.Skip()
 	c := reconnectingmemcached.NewClient(reconnectingmemcached.Options{
 		Servers:                      []string{"memcached-api-gateway.service.consul:11211"},
 		MaxIdleConnections:           10,

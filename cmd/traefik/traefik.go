@@ -610,6 +610,6 @@ func collect(staticConfiguration *static.Configuration) {
 	})
 }
 
-func setupMemcached(conf *static.Memcached) *memcached.Memcached {
-	return memcached.NewMemcached(conf)
+func setupMemcached(conf *static.Memcached) *memcached.Client {
+	return memcached.NewMemcachedClient(conf)
 }
