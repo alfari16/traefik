@@ -41,7 +41,7 @@ type Middleware struct {
 
 type Cache struct {
 	TTL              string `json:"ttl,omitempty" toml:"ttl,omitempty" yaml:"ttl,omitempty" export:"true"`
-	VariationHeaders string `json:"variation_headers,omitempty" toml:"variation_headers,omitempty" yaml:"variation_headers,omitempty" export:"true"`
+	VariationHeaders string `json:"variationHeaders,omitempty" toml:"variationHeaders,omitempty" yaml:"variationHeaders,omitempty" export:"true"`
 }
 
 // +k8s:deepcopy-gen=true

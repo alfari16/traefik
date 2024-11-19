@@ -1,0 +1,28 @@
+http:
+  routers:
+    # Define a connection between requests and services
+    to-whoami:
+      rule: "Path(`/anything`)"
+       # If the rule matches, applies the middleware
+      service: whoami
+      middlewares:
+        - cache-test
+        - rate-limit-test
+
+  middlewares:
+    # Define an authentication mechanism
+    cache-test:
+      cache:
+        ttl: 1m
+        variation_headers: user-agent,authorization
+    rate-limit-test:
+      rateLimit:
+        average: 100
+        burst: 200
+
+  services:
+    # Define how to reach an existing service on our infrastructure
+    whoami:
+      loadBalancer:
+        servers:
+        - url: http://localhost:3000

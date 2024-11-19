@@ -1,0 +1,20 @@
+entryPoints:
+  http:
+    address: :80
+    forwardedHeaders:
+      insecure: true
+
+api:
+  insecure: true
+
+log:
+  level: ERROR
+
+# Enable file configuration
+providers:
+  file:
+    directory: dynamic
+
+# Integrate to memcached for multi-purpose key-value storage
+memcached:
+  address: localhost:11211
